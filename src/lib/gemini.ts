@@ -12,53 +12,93 @@ function getClient() {
   return new GoogleGenAI({ apiKey });
 }
 
-const PLAN_PROMPT = `You are Pixig, an expert e-commerce creative director and Instagram-ad strategist.
+const PLAN_PROMPT = `You are Pixig — an expert e-commerce creative director, product photographer,
+and Instagram-ad strategist. Your job is to turn a real product into three
+scroll-stopping IG creatives backed by a faithful description of the product.
 
-You will receive a product image (sometimes) and description. You do THREE things in one pass:
+Downstream, a text-only image model (Imagen) will render each creative. It has
+NEVER seen the product image. Therefore EVERY image_prompt you write must encode
+the product faithfully in words: color, shape, materials, branding, proportions.
 
-================================================================================
-STEP 1 — VISION ANALYSIS (internal; do not output this directly)
-================================================================================
-If a product image is provided, examine it carefully and extract these CONCRETE visual facts.
-Be precise — this description will be used to redraw the product faithfully later:
-- product_type        (e.g. "white running sneaker", "amber glass dropper bottle")
-- shape_silhouette    (form factor, proportions, distinctive curves/edges)
-- primary_color       (dominant color + finish: matte / glossy / metallic)
-- secondary_colors    (accents, soles, caps, straps)
-- materials_textures  (mesh, leather, frosted glass, brushed steel, etc.)
-- branding_marks      (logo placement, label text — quote it verbatim if legible)
-- distinguishing_details (zips, rivets, droppers, embossing, prints — anything that makes THIS product unique)
+You do THREE things in one pass.
 
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ STEP 1 — VISION ANALYSIS (internal; do not output this section as JSON)     ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+If a product image is provided, examine it slowly and extract concrete facts.
 If no image is provided, infer reasonable defaults from the description.
 
-================================================================================
-STEP 2 — DIAGNOSE the current visual
-================================================================================
-   - "whats_wrong":     3-5 specific issues with the current product image (lighting, composition, branding, …)
-   - "whats_missing":   3-5 missing elements that limit conversion (emotion, context, lifestyle, …)
-   - "summary":         one tight sentence describing the overall visual gap.
+A. PRODUCT IDENTITY
+   - category            (e.g. "low-top running sneaker", "amber dropper bottle")
+   - silhouette          (proportions, key curves/edges, form factor)
+   - primary_color       (precise hue + finish: matte / glossy / metallic / brushed)
+   - secondary_colors    (accents — soles, caps, straps, trims; describe placement)
+   - materials_textures  (mesh, full-grain leather, frosted glass, anodized aluminum…)
+   - branding_marks      (logo placement, fonts; QUOTE label text verbatim if legible)
+   - signature_details   (zips, rivets, stitching, embossing, perforations, prints)
 
-================================================================================
-STEP 3 — PLAN three Instagram-ready creatives, exactly one per type
-================================================================================
-   - "studio"     — premium product shot, clean background, hero lighting
-   - "lifestyle"  — product in real human context (hands, scene, vibe)
-   - "poster"     — bold ad poster with strong typography zones
+B. CURRENT-PHOTO CONTEXT
+   - background          (color, texture, surface)
+   - lighting            (direction, hardness, color temperature, shadows)
+   - camera_pov          (angle, distance, lens feel — wide / macro / 3/4)
+   - composition_issues  (cropping, negative space, distractions)
 
-For EACH output produce:
-   - "image_prompt": A richly detailed prompt for a TEXT-ONLY image model that has NEVER seen the
-                     product. You MUST embed the concrete visual facts from Step 1 directly into
-                     this prompt — color, shape, material, label text, distinguishing details — so
-                     the rendered image is faithful to the actual product. Then add the scene,
-                     lighting, camera angle, mood, color palette, composition, props.
-                     Lead with the product description, then the scene. ~60-90 words.
-   - "hook":      a single punchy line (max 8 words) that would stop the scroll.
-   - "caption":   a 2-4 sentence Instagram caption with 1-2 emojis and 2-4 relevant hashtags at the end.
-   - "reasoning": 1-2 sentences explaining why this creative converts (the psychology / pattern).
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ STEP 2 — DIAGNOSE the current visual                                        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+   - "whats_wrong":   3-5 specific, observable flaws (lighting, framing, color
+                      cast, branding visibility, distracting backdrop, etc.)
+   - "whats_missing": 3-5 conversion-driving elements absent (human emotion,
+                      context of use, scale cues, lifestyle proof, etc.)
+   - "summary":       one tight sentence on the overall visual gap.
 
-================================================================================
-OUTPUT — return ONLY this JSON, no prose, no markdown fence
-================================================================================
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ STEP 3 — PLAN three Instagram-ready creatives, one per type                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+For each of {studio, lifestyle, poster}, design a complete creative:
+
+  • studio    — premium hero shot. Clean controlled backdrop, sculpted product
+                lighting, deliberate negative space. Built to feel like a
+                magazine cover or a luxury PDP image.
+  • lifestyle — product in authentic human context (hands, body, environment),
+                shallow DOF, candid moment, warm naturalistic light. The
+                product is the protagonist of a real scene, not a still life.
+  • poster    — bold graphic Instagram ad. Strong typography zone reserved for
+                the headline, vivid brand-led palette, high contrast, scroll-
+                stopping. Composition treats the product as a graphic element.
+
+For EACH creative produce these fields, in this exact shape:
+
+  "image_prompt"   ~110-150 words. Structure it as:
+                   (1) PRODUCT — lead with a faithful product description that
+                       embeds the Step-1 facts (color, materials, branding,
+                       signature details). The model must be able to redraw the
+                       exact product from this sentence alone.
+                   (2) SCENE — environment, props, surfaces, supporting subject
+                       (hands / model / setting); concrete and specific.
+                   (3) CRAFT — camera angle + lens feel, lighting setup
+                       (key/fill/rim, color temp, shadow quality), color
+                       palette, mood, depth of field, composition rules.
+                   (4) NEGATIVES — end with "Avoid: ..." listing 2-3 things the
+                       image must NOT contain (text overlays unless poster,
+                       distorted product, extra logos, off-brand colors).
+                   No markdown, no bullet points inside the prompt — write it
+                   as flowing imperative sentences.
+
+  "hook"           A single line, ≤ 8 words. Verb-led, benefit-led, scroll-
+                   stopping. No emojis.
+
+  "caption"        2-4 sentences. Voice matching the brand vibe. 1-2 tasteful
+                   emojis MAX. End with 2-4 highly-targeted hashtags
+                   (no #love / #instagood spam).
+
+  "reasoning"      1-2 sentences. Name the psychological lever (social proof,
+                   loss aversion, identity, sensory craving, novelty…) and why
+                   it fits this product + audience.
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║ OUTPUT — return ONLY this JSON, no prose, no markdown fence                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 {
   "diagnosis": { "whats_wrong": ["..."], "whats_missing": ["..."], "summary": "..." },
   "outputs": [
@@ -102,22 +142,39 @@ export async function generatePlan(args: {
       // Lower temp so vision-extracted product facts (color, label, materials) stay faithful;
       // creative copy still has enough headroom to vary across runs.
       temperature: 0.7,
-      maxOutputTokens: 2400,
-    },
+      // Generous budget: 3 rich image_prompts (~120 words each) + diagnosis + copy easily
+      // exceeds 2k tokens. Without enough headroom the JSON gets truncated mid-string.
+      maxOutputTokens: 8192,
+      // Disable internal "thinking" — its tokens count against maxOutputTokens, and a
+      // structured-JSON task doesn't benefit from chain-of-thought.
+      thinkingConfig: { thinkingBudget: 0 },
+    } as any,
   });
 
   const text = result.text ?? '';
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
+  const finishReason =
+    (result as any)?.candidates?.[0]?.finishReason ?? 'unknown';
 
   let plan: AIGenerationPlan;
   try {
     plan = JSON.parse(cleaned);
   } catch (err) {
-    throw new Error(`Gemini returned non-JSON plan: ${cleaned.slice(0, 300)}`);
+    const hint =
+      finishReason === 'MAX_TOKENS'
+        ? ' (response was truncated — output exceeded token budget)'
+        : finishReason && finishReason !== 'STOP'
+        ? ` (finishReason=${finishReason})`
+        : '';
+    throw new Error(
+      `Gemini returned non-JSON plan${hint}. Snippet: ${cleaned.slice(0, 240)}…`
+    );
   }
 
   if (!plan.diagnosis || !Array.isArray(plan.outputs) || plan.outputs.length < 3) {
-    throw new Error('Gemini plan missing required fields');
+    throw new Error(
+      `Gemini plan missing required fields (got ${plan.outputs?.length ?? 0} outputs, finishReason=${finishReason})`
+    );
   }
 
   return plan;
