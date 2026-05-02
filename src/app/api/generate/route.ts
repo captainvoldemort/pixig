@@ -135,8 +135,11 @@ export async function POST(req: NextRequest) {
 
     if (successfulOutputs.length === 0) {
       const reasons = outputsRaw
-        .filter((r): r is { ok: false; type: string; message: string } => !r.ok)
-        .map((r) => `${r.type}: ${r.message}`)
+        .filter((r) => !r.ok)
+        .map((r) => {
+          const failure = r as { ok: false; type: string; message: string };
+          return `${failure.type}: ${failure.message}`;
+        })
         .join(' | ');
       return NextResponse.json(
         {
