@@ -2,7 +2,9 @@ import { GoogleGenAI } from '@google/genai';
 import type { AIGenerationPlan, OutputType } from './types';
 
 const TEXT_MODEL = 'gemini-2.5-flash';
-const IMAGE_MODEL = 'gemini-2.5-flash-image';
+// Imagen 4 Fast is free-tier eligible (25 RPD) and ~3x cheaper than Nano Banana
+// on paid tier. It does NOT accept a reference image — purely text-to-image.
+const IMAGE_MODEL = 'imagen-4.0-fast-generate-001';
 
 function getClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -12,26 +14,51 @@ function getClient() {
 
 const PLAN_PROMPT = `You are Pixig, an expert e-commerce creative director and Instagram-ad strategist.
 
-Given a product image and description, do TWO things:
+You will receive a product image (sometimes) and description. You do THREE things in one pass:
 
-1. DIAGNOSE the product visual:
-   - "whats_wrong": 3-5 specific issues with the current product image (lighting, composition, branding, etc.)
-   - "whats_missing": 3-5 missing elements that limit conversion (emotion, context, lifestyle cues, etc.)
-   - "summary": one tight sentence describing the overall visual gap.
+================================================================================
+STEP 1 — VISION ANALYSIS (internal; do not output this directly)
+================================================================================
+If a product image is provided, examine it carefully and extract these CONCRETE visual facts.
+Be precise — this description will be used to redraw the product faithfully later:
+- product_type        (e.g. "white running sneaker", "amber glass dropper bottle")
+- shape_silhouette    (form factor, proportions, distinctive curves/edges)
+- primary_color       (dominant color + finish: matte / glossy / metallic)
+- secondary_colors    (accents, soles, caps, straps)
+- materials_textures  (mesh, leather, frosted glass, brushed steel, etc.)
+- branding_marks      (logo placement, label text — quote it verbatim if legible)
+- distinguishing_details (zips, rivets, droppers, embossing, prints — anything that makes THIS product unique)
 
-2. PLAN three Instagram-ready creatives, exactly one per type:
-   - "studio"    — premium product shot, clean background, hero lighting
-   - "lifestyle" — product in real human context (hands, scene, vibe)
-   - "poster"    — bold ad poster with strong typography zones (we will draw text in image)
+If no image is provided, infer reasonable defaults from the description.
 
-For EACH output, produce:
-   - "image_prompt": a richly detailed prompt for an image-generation model. Describe lighting, camera angle,
-                     mood, color palette, composition, props. ALWAYS preserve the actual product faithfully.
-   - "hook": a single punchy line (max 8 words) that would stop the scroll.
-   - "caption": a 2-4 sentence Instagram caption with 1-2 emojis and 2-4 relevant hashtags at the end.
+================================================================================
+STEP 2 — DIAGNOSE the current visual
+================================================================================
+   - "whats_wrong":     3-5 specific issues with the current product image (lighting, composition, branding, …)
+   - "whats_missing":   3-5 missing elements that limit conversion (emotion, context, lifestyle, …)
+   - "summary":         one tight sentence describing the overall visual gap.
+
+================================================================================
+STEP 3 — PLAN three Instagram-ready creatives, exactly one per type
+================================================================================
+   - "studio"     — premium product shot, clean background, hero lighting
+   - "lifestyle"  — product in real human context (hands, scene, vibe)
+   - "poster"     — bold ad poster with strong typography zones
+
+For EACH output produce:
+   - "image_prompt": A richly detailed prompt for a TEXT-ONLY image model that has NEVER seen the
+                     product. You MUST embed the concrete visual facts from Step 1 directly into
+                     this prompt — color, shape, material, label text, distinguishing details — so
+                     the rendered image is faithful to the actual product. Then add the scene,
+                     lighting, camera angle, mood, color palette, composition, props.
+                     Lead with the product description, then the scene. ~60-90 words.
+   - "hook":      a single punchy line (max 8 words) that would stop the scroll.
+   - "caption":   a 2-4 sentence Instagram caption with 1-2 emojis and 2-4 relevant hashtags at the end.
    - "reasoning": 1-2 sentences explaining why this creative converts (the psychology / pattern).
 
-Return ONLY valid JSON matching this schema, no prose, no markdown fence:
+================================================================================
+OUTPUT — return ONLY this JSON, no prose, no markdown fence
+================================================================================
 {
   "diagnosis": { "whats_wrong": ["..."], "whats_missing": ["..."], "summary": "..." },
   "outputs": [
@@ -72,7 +99,10 @@ export async function generatePlan(args: {
     contents: [{ role: 'user', parts }],
     config: {
       responseMimeType: 'application/json',
-      temperature: 0.85,
+      // Lower temp so vision-extracted product facts (color, label, materials) stay faithful;
+      // creative copy still has enough headroom to vary across runs.
+      temperature: 0.7,
+      maxOutputTokens: 2400,
     },
   });
 
@@ -116,55 +146,31 @@ export async function generateImage(args: {
           args.hook ?? ''
         }". Vivid brand color palette, high contrast, scroll-stopping. Square 1:1 composition.`;
 
-  const fullPrompt =
-    args.prompt +
-    styleSuffix +
-    ' IMPORTANT: keep the actual product faithful to the reference — same shape, color, label, and proportions.';
+  const fullPrompt = args.prompt + styleSuffix;
 
-  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
-    { text: fullPrompt },
-  ];
-
-  if (args.productImageBase64 && args.productImageMimeType) {
-    parts.push({
-      inlineData: {
-        mimeType: args.productImageMimeType,
-        data: args.productImageBase64,
-      },
-    });
-  }
-
-  const result = await ai.models.generateContent({
+  // Imagen 4 — text-to-image only (no reference image input).
+  const result: any = await (ai.models as any).generateImages({
     model: IMAGE_MODEL,
-    contents: [{ role: 'user', parts }],
+    prompt: fullPrompt,
     config: {
-      responseModalities: ['IMAGE', 'TEXT'],
-    } as any,
+      numberOfImages: 1,
+      aspectRatio: '1:1',
+    },
   });
 
-  const candidates = result.candidates ?? [];
-  for (const candidate of candidates) {
-    const partsOut = candidate.content?.parts ?? [];
-    for (const part of partsOut) {
-      const inline = (part as any).inlineData;
-      if (inline?.data) {
-        return {
-          base64: inline.data,
-          mimeType: inline.mimeType ?? 'image/png',
-        };
-      }
-    }
+  const generated = result?.generatedImages?.[0]?.image;
+  const bytes = generated?.imageBytes;
+  if (bytes) {
+    return {
+      base64: bytes,
+      mimeType: generated.mimeType ?? 'image/png',
+    };
   }
 
-  // Surface useful debug info: blocked? finishReason? text-only response?
-  const first = candidates[0];
-  const finishReason = first?.finishReason ?? 'unknown';
-  const textPart = first?.content?.parts?.find((p: any) => typeof p.text === 'string') as any;
-  const promptFeedback = (result as any).promptFeedback;
-  throw new Error(
-    `Gemini did not return an image (finishReason=${finishReason}` +
-      (promptFeedback?.blockReason ? `, blockReason=${promptFeedback.blockReason}` : '') +
-      (textPart?.text ? `, text="${String(textPart.text).slice(0, 120)}"` : '') +
-      ')'
-  );
+  // Surface useful debug info if Imagen returned nothing.
+  const reason =
+    result?.generatedImages?.[0]?.raiFilteredReason ??
+    result?.error?.message ??
+    'no image bytes returned';
+  throw new Error(`Imagen did not return an image (${reason})`);
 }
