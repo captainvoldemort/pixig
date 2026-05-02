@@ -137,6 +137,9 @@ export async function generateImage(args: {
   const result = await ai.models.generateContent({
     model: IMAGE_MODEL,
     contents: [{ role: 'user', parts }],
+    config: {
+      responseModalities: ['IMAGE', 'TEXT'],
+    } as any,
   });
 
   const candidates = result.candidates ?? [];
@@ -153,5 +156,15 @@ export async function generateImage(args: {
     }
   }
 
-  throw new Error('Gemini did not return an image');
+  // Surface useful debug info: blocked? finishReason? text-only response?
+  const first = candidates[0];
+  const finishReason = first?.finishReason ?? 'unknown';
+  const textPart = first?.content?.parts?.find((p: any) => typeof p.text === 'string') as any;
+  const promptFeedback = (result as any).promptFeedback;
+  throw new Error(
+    `Gemini did not return an image (finishReason=${finishReason}` +
+      (promptFeedback?.blockReason ? `, blockReason=${promptFeedback.blockReason}` : '') +
+      (textPart?.text ? `, text="${String(textPart.text).slice(0, 120)}"` : '') +
+      ')'
+  );
 }

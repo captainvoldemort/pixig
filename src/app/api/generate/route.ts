@@ -112,26 +112,36 @@ export async function POST(req: NextRequest) {
             folder: `pixig/users/${user.id}/projects/${project.id}/outputs`,
           });
           return {
-            type: o.type as OutputType,
-            image_url: uploaded.url,
-            hook: o.hook,
-            caption: o.caption,
-            reasoning: o.reasoning,
+            ok: true as const,
+            value: {
+              type: o.type as OutputType,
+              image_url: uploaded.url,
+              hook: o.hook,
+              caption: o.caption,
+              reasoning: o.reasoning,
+            },
           };
         } catch (err) {
-          console.error(`Failed to generate ${o.type}`, err);
-          return null;
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[generate] ${o.type} failed:`, message);
+          return { ok: false as const, type: o.type, message };
         }
       })
     );
 
-    const successfulOutputs = outputsRaw.filter(
-      (x): x is NonNullable<typeof x> => x !== null
-    );
+    const successfulOutputs = outputsRaw
+      .filter((r): r is { ok: true; value: any } => r.ok)
+      .map((r) => r.value);
 
     if (successfulOutputs.length === 0) {
+      const reasons = outputsRaw
+        .filter((r): r is { ok: false; type: string; message: string } => !r.ok)
+        .map((r) => `${r.type}: ${r.message}`)
+        .join(' | ');
       return NextResponse.json(
-        { error: 'Image generation failed for all outputs. Check Gemini API quota & key.' },
+        {
+          error: `All image generations failed. ${reasons || 'No reasons captured.'}`,
+        },
         { status: 502 }
       );
     }
