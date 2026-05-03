@@ -38,3 +38,6 @@ next-env.d.ts
 # IDE
 .vscode/
 .idea/
+
+# Claude Code (local-only per-machine settings)
+.claude/settings.local.json

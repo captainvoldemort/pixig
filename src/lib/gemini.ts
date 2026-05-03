@@ -1,9 +1,14 @@
 import { GoogleGenAI } from '@google/genai';
 import type { AIGenerationPlan, OutputType } from './types';
 
+// Multimodal model used for both vision understanding and creative planning:
+//   image (inlineData) + product description  →  diagnosis + 3 briefs (JSON)
+// Single call — no separate vision model needed.
 const TEXT_MODEL = 'gemini-2.5-flash';
-// Imagen 4 Fast is free-tier eligible (25 RPD) and ~3x cheaper than Nano Banana
-// on paid tier. It does NOT accept a reference image — purely text-to-image.
+
+// Image generation is currently disabled (every Gemini/Imagen image-gen model is
+// paid-only — see https://ai.google.dev/gemini-api/docs/pricing). The
+// generateImage helper below is kept so flipping back is one line in route.ts.
 const IMAGE_MODEL = 'imagen-4.0-fast-generate-001';
 
 function getClient() {
