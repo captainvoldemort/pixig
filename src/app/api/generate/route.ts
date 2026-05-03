@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { uploadBase64 } from '@/lib/cloudinary';
-import { generateImage, generatePlan } from '@/lib/gemini';
+import { generatePlan } from '@/lib/gemini';
 import type { Output, OutputType, VersionWithOutputs } from '@/lib/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
+
+// Pixig is currently text-only on free tier — every Gemini/Imagen image-gen
+// model is paid-only per https://ai.google.dev/gemini-api/docs/pricing.
+// To re-enable image generation: enable billing on the GCP project, then set
+// TEXT_ONLY = false (and import generateImage from '@/lib/gemini').
+const TEXT_ONLY = true;
 
 interface Body {
   projectId: string;
@@ -95,59 +101,18 @@ export async function POST(req: NextRequest) {
       imageMimeType: sourceImage?.mimeType,
     });
 
-    // 3. Generate one image per output type, in parallel, and upload to Cloudinary.
-    const outputsRaw = await Promise.all(
-      plan.outputs.map(async (o) => {
-        try {
-          const img = await generateImage({
-            prompt: o.image_prompt,
-            type: o.type,
-            productImageBase64: sourceImage?.base64,
-            productImageMimeType: sourceImage?.mimeType,
-            hook: o.hook,
-          });
-          const uploaded = await uploadBase64({
-            base64: img.base64,
-            mimeType: img.mimeType,
-            folder: `pixig/users/${user.id}/projects/${project.id}/outputs`,
-          });
-          return {
-            ok: true as const,
-            value: {
-              type: o.type as OutputType,
-              image_url: uploaded.url,
-              hook: o.hook,
-              caption: o.caption,
-              reasoning: o.reasoning,
-            },
-          };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.error(`[generate] ${o.type} failed:`, message);
-          return { ok: false as const, type: o.type, message };
-        }
-      })
-    );
-
-    const successfulOutputs = outputsRaw
-      .filter((r): r is { ok: true; value: any } => r.ok)
-      .map((r) => r.value);
-
-    if (successfulOutputs.length === 0) {
-      const reasons = outputsRaw
-        .filter((r) => !r.ok)
-        .map((r) => {
-          const failure = r as { ok: false; type: string; message: string };
-          return `${failure.type}: ${failure.message}`;
-        })
-        .join(' | ');
-      return NextResponse.json(
-        {
-          error: `All image generations failed. ${reasons || 'No reasons captured.'}`,
-        },
-        { status: 502 }
-      );
-    }
+    // 3. Build output rows.
+    //    TEXT_ONLY: skip image generation; persist image_url='' so the UI
+    //    renders a "copy this prompt" card instead of a generated image.
+    void TEXT_ONLY;
+    const successfulOutputs = plan.outputs.map((o) => ({
+      type: o.type as OutputType,
+      image_url: '',
+      image_prompt: o.image_prompt,
+      hook: o.hook,
+      caption: o.caption,
+      reasoning: o.reasoning,
+    }));
 
     // 4. Persist version + outputs.
     const { data: version, error: vErr } = await sb
@@ -171,6 +136,7 @@ export async function POST(req: NextRequest) {
       version_id: version.id,
       type: o.type,
       image_url: o.image_url,
+      image_prompt: o.image_prompt,
       hook: o.hook,
       caption: o.caption,
       reasoning: o.reasoning,

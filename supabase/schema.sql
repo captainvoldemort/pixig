@@ -46,13 +46,14 @@ begin
 end$$;
 
 create table if not exists public.outputs (
-  id          uuid primary key default gen_random_uuid(),
-  version_id  uuid not null references public.versions(id) on delete cascade,
-  type        public.output_type not null,
-  image_url   text not null,
-  hook        text not null default '',
-  caption     text not null default '',
-  reasoning   text not null default ''
+  id            uuid primary key default gen_random_uuid(),
+  version_id    uuid not null references public.versions(id) on delete cascade,
+  type          public.output_type not null,
+  image_url     text not null default '',  -- '' when running text-only (no image gen)
+  image_prompt  text not null default '',  -- rich prompt user can paste into any image-gen tool
+  hook          text not null default '',
+  caption       text not null default '',
+  reasoning     text not null default ''
 );
 
 create index if not exists outputs_version_id_idx on public.outputs(version_id);

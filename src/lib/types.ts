@@ -21,7 +21,8 @@ export interface Output {
   id: string;
   version_id: string;
   type: OutputType;
-  image_url: string;
+  image_url: string;     // '' when running text-only (no image generation)
+  image_prompt: string;  // rich prompt the user can paste into any image-gen tool
   hook: string;
   caption: string;
   reasoning: string;

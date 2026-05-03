@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(cmd //c \"dir /S /B c:\\\\Users\\\\yasht\\\\OneDrive\\\\Desktop\\\\pixig\")"
+      "Bash(cmd //c \"dir /S /B c:\\\\Users\\\\yasht\\\\OneDrive\\\\Desktop\\\\pixig\")",
+      "WebFetch(domain:ai.google.dev)"
     ]
   }
 }
